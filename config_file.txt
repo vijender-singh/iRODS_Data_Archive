@@ -1,0 +1,123 @@
+# =============================================================================
+# config_file.txt
+# Description: Pipeline-wide configuration for the iRODS archive system.
+#              Sourced by all pipeline scripts via:
+#                  source ${APP_DIR}/config_file.txt
+#
+# Sections:
+#   1. Archiving Policy
+#   2. Environment Detection  (SLURM_PARTITION / PROCESS_DIR / ARCHIVE_LOGS_DIR)
+#   3. Tarballing Parameters
+#   4. iRODS Transfer Parameters
+#   5. iRODS Retrieval Parameters
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Section 1: Archiving Policy
+# Controls which datasets are eligible for archiving and how many attempts
+# are made before a dataset is permanently marked as failed.
+# -----------------------------------------------------------------------------
+
+# Minimum age (in days) of a raw dataset directory to be eligible for archiving.
+# The find command in search_datasets.sh uses: -mtime +AGE
+#
+#   180 = 6 months
+#   360 = 1 year        ← current setting
+#   540 = 1 year 6 months
+#   720 = 2 years
+AGE=360
+
+# Maximum number of archive attempts permitted per dataset before it is moved
+# to max_retries_exceeded_failed_datasets.txt and excluded from future runs.
+RETRIES=3
+
+# Maximum number of iRODS archive array tasks to run in parallel.
+# Passed to sbatch as: --array=0-N%MAX_IRODS_ARCHIVE_INSTANCES
+MAX_IRODS_ARCHIVE_INSTANCES=4
+
+
+# -----------------------------------------------------------------------------
+# Section 2: Environment Detection
+# Detects the production HPC environment from the hostname and sets:
+#   SLURM_PARTITION  - SLURM partition to submit jobs to
+#   PROCESS_DIR      - Working directory for tarballed files (requires
+#                      sufficient scratch/storage space)
+#   ARCHIVE_LOGS_DIR - Directory for all archive/transfer logs
+#                      (successful, failed, in-transit tracking files)
+# -----------------------------------------------------------------------------
+
+PROD_ENV=$(echo "$(hostname)" | cut -d. -f2)
+
+if [ "$PROD_ENV" = "erd" ]; then
+    SLURM_PARTITION=icelake
+    PROCESS_DIR=/hpspor01/tenant1/ngsservice/vijender.singh/irods/
+    ARCHIVE_LOGS_DIR=/hpspor01/tenant1/ngsservice/vijender.singh/irods/
+
+elif [ "$PROD_ENV" = "smed" ]; then
+    SLURM_PARTITION=standard-wp
+    PROCESS_DIR=/data/scratch/vijender.singh/
+    ARCHIVE_LOGS_DIR=/data/scratch/vijender.singh/
+
+elif [ "$PROD_ENV" = "hpc" ]; then
+    SLURM_PARTITION=htc
+    PROCESS_DIR=/hpscol02/tenant1/ngsservice/vijender.singh/irods/
+    ARCHIVE_LOGS_DIR=/hpscol02/tenant1/ngsservice/vijender.singh/irods/
+
+else
+    echo "ERROR: Production environment not recognised (hostname domain: ${PROD_ENV})"
+fi
+
+
+# -----------------------------------------------------------------------------
+# Section 3: Tarballing Parameters
+# Controls resource allocation for SLURM tarball jobs submitted via
+# SUBMIT_TARBALL_PROCESS() in logging.sh.
+# -----------------------------------------------------------------------------
+
+# Number of CPU cores allocated to each tarball job.
+TAR_CORES=1
+
+# Memory allocated to each tarball batch job.
+TAR_MEM=10G
+
+# Whether to split tarballs into fixed-size chunks.
+# Split parts are named with sequential suffixes: .aa  .ab  .ac  ...
+# Used for raw_data archives that may exceed single-file size limits.
+SPLIT_TARBALL="TRUE"
+
+# Maximum size of each split tarball chunk.
+# Only applies when SPLIT_TARBALL="TRUE".
+SPLIT_TARBALL_SIZE="20G"
+
+
+# -----------------------------------------------------------------------------
+# Section 4: iRODS Transfer Parameters
+# Flags passed to iput when uploading tarballs and samplesheets to iRODS.
+# Used by copy_2_iRODS.sh via the log_and_run_irods() function in logging.sh.
+# -----------------------------------------------------------------------------
+
+IPUT_FLAGS="-R fast_resc --retries 3"
+
+# Flag reference:
+#   -R fast_resc   Target resource for archiving. After implementation of the
+#                  tiering system, data is landed on fast_resc before migration.
+#                  Run `ilsresc` to list all available resources.
+#   --retries 3    Number of iput retry attempts on transient failures.
+#   (-N 1          One transfer thread — not currently set; iRODS default used.)
+
+
+# -----------------------------------------------------------------------------
+# Section 5: iRODS Retrieval Parameters
+# Flags passed to iget when retrieving data from iRODS.
+# Used by extract.sh and extract_file.sh.
+# -----------------------------------------------------------------------------
+
+IGET_FLAGS="-R s3_resc --retries 3"
+
+# Flag reference:
+#   -R s3_resc     Retrieve from the S3-backed tiered resource (data migrated
+#                  from fast_resc after the retention period).
+#                  Run `ilsresc` to list all available resources.
+#   --retries 3    Number of iget retry attempts on transient failures.
+#   (-N 1          One transfer thread — not currently set; iRODS default used.)

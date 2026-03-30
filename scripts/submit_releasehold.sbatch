@@ -1,0 +1,11 @@
+#!/bin/bash
+
+DATASETS_TO_PROCESS="${1}"
+LOCK_FILE="${2}"
+IRODS_TRACK_DIR="${3}"
+
+UNIQ_SUFFIX=$(echo ${DATASETS_TO_PROCESS} | cut -d. -f2)
+
+grep -vxFf ${IRODS_TRACK_DIR}/"${DATASETS_TO_PROCESS}" "${LOCK_FILE}" > ${LOCK_FILE}_tmp_${UNIQ_SUFFIX}
+
+mv ${LOCK_FILE}_tmp_${UNIQ_SUFFIX} ${LOCK_FILE}
